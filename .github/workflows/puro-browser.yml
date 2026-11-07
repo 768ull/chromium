@@ -109,8 +109,8 @@ jobs:
           for p in "$GITHUB_WORKSPACE/puro-repo"/puro/patches/*.patch; do
             [ -f "$p" ] || continue
             echo "Aplicando $(basename "$p")"
-            git apply --check "$p"
-            git apply "$p"
+            git apply --recount --check "$p"
+            git apply --recount "$p"
           done
 
       - name: Compilar
