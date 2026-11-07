@@ -1,52 +1,52 @@
-name: Puro Browser - Compilacao e Assinatura de APK
+name: Puro Browser - Android builds
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/puro-browser.yml'
+      - 'puro/**'
   workflow_dispatch:
     inputs:
       variant:
-        description: "Variante: v1 Estavel | v2 Beta | v3 Dev | v4 Nightly"
+        description: "Variante"
         type: choice
         options: ["v1", "v2", "v3", "v4"]
         default: "v1"
+        required: true
       target_cpu:
-        description: "ABI alvo: arm64 (arm64-v8a) | arm (armeabi-v7a) | x86 | x64 (x86_64)"
+        description: "ABI"
         type: choice
         options: ["arm64", "arm", "x86", "x64"]
         default: "arm64"
+        required: true
       build_all_abis:
-        description: "Compilar as 4 ABIs em matriz (sobrepoe a ABI escolhida)"
+        description: "Compilar as quatro ABIs"
         type: boolean
         default: false
       chromium_ref:
-        description: "SHA do commit do Chromium (vazio = HEAD do branch principal)"
+        description: "SHA/branch do Chromium (vazio usa main)"
         required: false
         default: ""
-      runner_label:
-        description: "Label do runner (exige 8+ CPUs, 16+ GB RAM, 200+ GB livres)"
-        default: "puro-builder"
       publish_release:
-        description: "Publicar os APKs assinados como Release do repositorio"
+        description: "Publicar Release"
         type: boolean
         default: false
 
 permissions:
   contents: write
 
-concurrency:
-  group: puro-${{ github.event.inputs.variant }}
-  cancel-in-progress: false
-
 jobs:
   build:
-    name: Puro ${{ github.event.inputs.variant }} - ${{ matrix.target_cpu }}
-    runs-on: ${{ github.event.inputs.runner_label || 'puro-builder' }}
-    timeout-minutes: 1400
+    name: "Puro ${{ github.event.inputs.variant }} / ${{ matrix.target_cpu }}"
+    runs-on: [self-hosted, linux, x64, puro-builder]
+    timeout-minutes: 1440
     strategy:
       fail-fast: false
       matrix:
-        target_cpu: ${{ (github.event.inputs.build_all_abis == 'true' && fromJSON('["arm64","arm","x86","x64"]')) || fromJSON(format('["{0}"]', github.event.inputs.target_cpu)) }}
+        target_cpu: ${{ (github.event.inputs.build_all_abis == 'true' && fromJSON('["arm64","arm","x86","x64"]')) || fromJSON(format('["{0}"]', github.event.inputs.target_cpu || 'arm64')) }}
     env:
-      VARIANT: ${{ github.event.inputs.variant }}
+      VARIANT: ${{ github.event.inputs.variant || 'v1' }}
       KEYSTORE_V1: ${{ secrets.PURO_KEYSTORE_V1 }}
       KEYSTORE_V2: ${{ secrets.PURO_KEYSTORE_V2 }}
       KEYSTORE_V3: ${{ secrets.PURO_KEYSTORE_V3 }}
@@ -56,40 +56,46 @@ jobs:
       KEYSTORE_V3_PASSWORD: ${{ secrets.PURO_KEYSTORE_V3_PASSWORD }}
       KEYSTORE_V4_PASSWORD: ${{ secrets.PURO_KEYSTORE_V4_PASSWORD }}
     steps:
-      - name: Obter scripts do Puro deste repositorio
+      - name: Checkout scripts Puro
         uses: actions/checkout@v4
         with:
           path: puro-repo
           sparse-checkout: puro
 
-      - name: Verificar pre-requisitos de hardware
+      - name: Verificar recursos
+        shell: bash
         run: |
           set -euo pipefail
-          echo "CPUs: $(nproc)"; free -h; df -h /
+          echo "CPUs: $(nproc)"
+          free -h
+          df -h /
           AVAIL_GB=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
-          if [ "$AVAIL_GB" -lt 200 ]; then
-            echo "::error::Disco insuficiente: $AVAIL_GB GB livres. A arvore do Chromium exige pelo menos 200 GB. Runners padrao do GitHub (ubuntu-latest, cerca de 20 GB livres) NAO sao capazes de compilar o Chromium."
-            exit 1
-          fi
-          if [ "$(nproc)" -lt 8 ]; then
-            echo "::warning::Menos de 8 CPUs detectadas; a compilacao pode exceder os limites de tempo."
-          fi
+          [ "$AVAIL_GB" -ge 200 ] || { echo "::error::Sao necessarios pelo menos 200 GB livres."; exit 1; }
+          [ "$(nproc)" -ge 8 ] || { echo "::error::Sao necessarias pelo menos 8 CPUs."; exit 1; }
+          MEM_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+          [ "$MEM_KB" -ge 16000000 ] || { echo "::error::Sao necessarios pelo menos 16 GB RAM."; exit 1; }
 
       - name: Instalar depot_tools
+        shell: bash
         run: |
-          set -euxo pipefail
-          git config --global http.postBuffer 524288000
+          set -euo pipefail
           mkdir -p "$RUNNER_TEMP/puro"
-          cd "$RUNNER_TEMP/puro"
-          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          if [ ! -d "$RUNNER_TEMP/puro/depot_tools/.git" ]; then
+            git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$RUNNER_TEMP/puro/depot_tools"
+          else
+            git -C "$RUNNER_TEMP/puro/depot_tools" pull --ff-only
+          fi
           echo "$RUNNER_TEMP/puro/depot_tools" >> "$GITHUB_PATH"
 
-      - name: Sincronizar arvore do Chromium a partir deste espelho
+      - name: Sincronizar Chromium
+        shell: bash
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           export PATH="$RUNNER_TEMP/puro/depot_tools:$PATH"
           cd "$RUNNER_TEMP/puro"
-          gclient config --name=src "https://github.com/$GITHUB_REPOSITORY.git"
+          if [ ! -f .gclient ]; then
+            gclient config --name=src "https://github.com/$GITHUB_REPOSITORY.git"
+          fi
           REF="${{ github.event.inputs.chromium_ref }}"
           if [ -n "$REF" ]; then
             gclient sync -D --no-history --jobs 16 -r "$REF"
@@ -100,71 +106,73 @@ jobs:
           sudo ./build/install-build-deps.sh --android
           gclient runhooks
 
-      - name: Aplicar patches do Puro (opcional)
+      - name: Aplicar patches Puro (estrito)
+        shell: bash
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/puro/src"
-          PATCH_DIR="$GITHUB_WORKSPACE/puro-repo/puro/patches"
-          if compgen -G "$PATCH_DIR/*.patch" > /dev/null; then
-            for p in "$PATCH_DIR"/*.patch; do
-              echo "Aplicando $(basename "$p")"
-              git apply --check "$p" && git apply "$p" || echo "::warning::Patch nao aplicavel: $(basename "$p")"
-            done
-          else
-            echo "Nenhum patch presente em puro/patches; a remocao de servicos depende apenas das flags GN de args.gn."
-          fi
+          for p in "$GITHUB_WORKSPACE/puro-repo"/puro/patches/*.patch; do
+            [ -f "$p" ] || continue
+            echo "Aplicando $(basename "$p")"
+            git apply --recount --check "$p"
+            git apply --recount "$p"
+          done
 
-      - name: Compilar (gn gen + autoninja chrome_public_apk)
+      - name: Compilar
+        shell: bash
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           bash "$GITHUB_WORKSPACE/puro-repo/puro/build_puro.sh" \
             "$VARIANT" "${{ matrix.target_cpu }}" \
             "$RUNNER_TEMP/puro/src" "$GITHUB_WORKSPACE/dist"
 
-      - name: Assinar (esquemas V1+V2+V3) e verificar conformidade
+      - name: Assinar e auditar
+        shell: bash
         run: |
-          set -euxo pipefail
-          cd "$RUNNER_TEMP/puro/src"
+          set -euo pipefail
           case "$VARIANT" in
             v1) KS_B64="$KEYSTORE_V1"; KS_PASS="$KEYSTORE_V1_PASSWORD"; ALIAS="puro_v1" ;;
             v2) KS_B64="$KEYSTORE_V2"; KS_PASS="$KEYSTORE_V2_PASSWORD"; ALIAS="puro_v2" ;;
             v3) KS_B64="$KEYSTORE_V3"; KS_PASS="$KEYSTORE_V3_PASSWORD"; ALIAS="puro_v3" ;;
             v4) KS_B64="$KEYSTORE_V4"; KS_PASS="$KEYSTORE_V4_PASSWORD"; ALIAS="puro_v4" ;;
+            *) echo "Variante invalida"; exit 2 ;;
           esac
-          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ]; then
-            echo "::error::Segredos da keystore da variante $VARIANT nao configurados no repositorio."
-            exit 1
-          fi
+          [ -n "$KS_B64" ] && [ -n "$KS_PASS" ] || { echo "::error::Keystore/ senha nao cadastrada."; exit 1; }
           printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/puro-keystore.jks"
-          BT="$(find third_party/android_sdk/public/build-tools -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-          APK_IN="$GITHUB_WORKSPACE/dist/Puro-$VARIANT-$ABI_NAME-unsigned.apk"
-          APK_OUT="$GITHUB_WORKSPACE/dist/Puro-$VARIANT-$ABI_NAME-signed.apk"
-          "$BT/zipalign" -f -p 4 "$APK_IN" "$APK_OUT.unaligned"
+          chmod 600 "$RUNNER_TEMP/puro-keystore.jks"
+          BT="$(find "$RUNNER_TEMP/puro/src/third_party/android_sdk/public/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          case "${{ matrix.target_cpu }}" in
+            arm64) ABI=arm64-v8a ;;
+            arm) ABI=armeabi-v7a ;;
+            x86) ABI=x86 ;;
+            x64) ABI=x86_64 ;;
+          esac
+          IN="$GITHUB_WORKSPACE/dist/Puro-$VARIANT-$ABI-unsigned.apk"
+          OUT="$GITHUB_WORKSPACE/dist/Puro-$VARIANT-$ABI-signed.apk"
+          test -s "$IN"
+          "$BT/zipalign" -f -p 4 "$IN" "$OUT"
           "$BT/apksigner" sign \
             --ks "$RUNNER_TEMP/puro-keystore.jks" \
             --ks-key-alias "$ALIAS" \
             --ks-pass "pass:$KS_PASS" --key-pass "pass:$KS_PASS" \
             --v1-signing-enabled true --v2-signing-enabled true \
-            --v3-signing-enabled true --v4-signing-enabled false \
-            --out "$APK_OUT" "$APK_OUT.unaligned"
-          rm -f "$APK_OUT.unaligned" "$APK_IN"
-          "$BT/apksigner" verify --verbose "$APK_OUT" | tee "$GITHUB_WORKSPACE/dist/apksigner-verify-$ABI_NAME.txt"
-          "$BT/aapt2" dump badging "$APK_OUT" | tee "$GITHUB_WORKSPACE/dist/aapt2-badging-$ABI_NAME.txt"
-          "$BT/aapt2" dump badging "$APK_OUT" | grep -q "package: name='com.purobrowser.$VARIANT'" || { echo "::error::Application ID incorreto."; exit 1; }
-          if "$BT/aapt2" dump xmltree --file AndroidManifest.xml "$APK_OUT" | grep -i "com.google.android.gms"; then
-            echo "::error::Referencias a GMS encontradas no manifesto."; exit 1
-          else
-            echo "APROVADO: manifesto sem referencias a Google Play Services."
-          fi
-          cd "$GITHUB_WORKSPACE/dist"
-          sha256sum Puro-*.apk > "SHA256SUMS-$ABI_NAME.txt"
+            --v3-signing-enabled true --v4-signing-enabled true \
+            "$OUT"
+          rm -f "$IN"
+          bash "$GITHUB_WORKSPACE/puro-repo/puro/audit_apk.sh" "$OUT" "$BT" "$VARIANT" "$ABI"
+          (cd "$GITHUB_WORKSPACE/dist" && sha256sum "$(basename "$OUT")" "$(basename "$OUT").idsig" > "SHA256SUMS-$ABI.txt")
+          rm -f "$RUNNER_TEMP/puro-keystore.jks"
 
-      - name: Publicar artefatos
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Puro-${{ env.VARIANT }}-${{ env.ABI_NAME }}
-          path: dist/
+          name: Puro-${{ github.event.inputs.variant }}-${{ matrix.target_cpu }}
+          path: |
+            dist/Puro-*.apk
+            dist/Puro-*.apk.idsig
+            dist/SHA256SUMS-*.txt
           if-no-files-found: error
+          retention-days: 14
 
   release:
     if: github.event.inputs.publish_release == 'true'
@@ -173,19 +181,20 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Reunir APKs de todas as ABIs
+      - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: Puro-${{ github.event.inputs.variant }}-*
           merge-multiple: true
-      - name: Criar Release
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
           VARIANT: ${{ github.event.inputs.variant }}
         run: |
-          set -euxo pipefail
-          TAG="puro-$VARIANT-$(date -u +%Y%m%d-%H%M)"
-          gh release create "$TAG" dist/Puro-*.apk dist/SHA256SUMS-*.txt dist/*.txt \
+          set -euo pipefail
+          TAG="puro-$VARIANT-$(date -u +%Y%m%d-%H%M%S)"
+          gh release create "$TAG" dist/Puro-*.apk dist/Puro-*.apk.idsig dist/SHA256SUMS-*.txt \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Puro Browser $VARIANT - $(date -u +%Y%m%d)" \
-            --notes "APKs assinados com a keystore da variante $VARIANT. Consulte os arquivos SHA256SUMS e os relatorios de verificacao (apksigner e aapt2)."
+            --title "Puro Browser $VARIANT - $(date -u +%Y-%m-%d)" \
+            --notes "APK assinado; consulte SHA256SUMS e idsig."
