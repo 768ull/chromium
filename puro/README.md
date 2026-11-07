@@ -1,77 +1,73 @@
-# Puro Browser: pipeline de compilacao (GitHub Actions)
+# Puro Browser — pipeline Android
 
-Este diretorio implementa, sobre o espelho oficial do Chromium hospedado neste repositorio, o pipeline de compilacao do navegador Puro para Android: quatro variantes independentes (v1 Estavel, v2 Beta, v3 Dev, v4 Nightly), quatro ABIs (arm64-v8a, armeabi-v7a, x86, x86_64), assinatura individual por variante e verificacao de conformidade sem dependencias de servicos Google.
+## Variantes
 
-## Estrutura
+| Variante | Finalidade | Application ID | Keystore |
+|---|---|---|---|
+| v1 | Estável | `com.purobrowser.v1` | `puro_v1` |
+| v2 | Beta | `com.purobrowser.v2` | `puro_v2` |
+| v3 | Dev | `com.purobrowser.v3` | `puro_v3` |
+| v4 | Nightly | `com.purobrowser.v4` | `puro_v4` |
 
-| Arquivo | Funcao |
-| --- | --- |
-| .github/workflows/puro-browser.yml | Action de compilacao, assinatura, verificacao e publicacao |
-| puro/build_puro.sh | Gera args.gn de cada celula da matriz e compila chrome_public_apk |
-| puro/gen_keystores.sh | Gera as quatro keystores (uma por variante) |
-| puro/args_template.gn | Modelo para compilacao manual local |
-| puro/patches/ | Diretorio para patches de codigo-fonte (opcional) |
+O patch `0001-puro-package-id.patch` define o ID diretamente no template GN, sem sufixo automático de canal. Cada variante usa uma chave própria para permitir instalação paralela.
 
-## Requisitos de infraestrutura
+## ABIs
 
-A compilacao do Chromium nao cabe nos runners gratuitos do GitHub (ubuntu-latest possui cerca de 20 GB de disco livre; a arvore do Chromium exige mais de 200 GB). Registre um runner self-hosted com o label puro-builder:
+| `target_cpu` | ABI | APK |
+|---|---|---|
+| arm64 | arm64-v8a | APK ARM64 |
+| arm | armeabi-v7a | APK ARM32 |
+| x86 | x86 | APK x86 |
+| x64 | x86_64 | APK x86_64 |
 
-| Recurso | Minimo | Recomendado |
-| --- | --- | --- |
-| CPUs | 8 | 16 a 32 |
-| RAM | 16 GB | 32 a 64 GB |
-| Disco livre | 200 GB | 400 GB NVMe |
-| SO | Ubuntu 22.04 ou 24.04 | Ubuntu 24.04 |
-| Outros | sudo sem senha, git, acesso a internet | Ubuntu 24.04 |
+Cada ABI é uma compilação separada. Não é um único APK universal multi-ABI. Nesta revisão upstream, o alvo Android do Chromium exige Android 10 ou posterior; ARM32 não significa suporte a versões antigas anteriores ao minSdk do projeto.
 
-Cadastro: Settings > Actions > Runners > New self-hosted runner, atribuindo o label puro-builder. Contas organizacionais em planos pagos podem, alternativamente, usar larger runners com disco de 640 GB ou mais (32 vCPU ou superior), ajustando o parametro runner_label.
+## De-googling configurado
 
-## Configuracao unica
+- `is_chrome_branded=false`, `use_official_google_api_keys=false`, chaves oficiais vazias.
+- Desativados Hangouts extension, remoting, mDNS, service discovery, media router e Reporting API.
+- `safe_browsing_mode=1` seleciona Safe Browsing com banco local. O modo Android padrão `2` é a variante que usa consulta remota/GMS Core.
+- `disable_fieldtrial_testing_config=true` desativa o arquivo de testes de field trials, mas não remove todo o sistema Variations/Finch.
+- O patch `0002` remove declarações de manifesto relacionadas a C2DM/FCM, permissão de acesso à conta Google, receiver que exige broadcast GMS e provider Cast.
 
-1. Gerar as keystores em maquina local confiavel:
+### Flags solicitadas que não existem
 
-   ```bash
-   bash puro/gen_keystores.sh /caminho/seguro/keys
-   ```
+Nesta revisão, `enable_gservices` e `enable_google_now` não são argumentos GN declarados. Não devem ser incluídos: GN rejeita argumentos desconhecidos ou sem efeito. `enable_hangout_services_extension`, `use_official_google_api_keys`, `disable_fieldtrial_testing_config` e `blink_symbol_level` são suportados.
 
-2. Cadastrar oito segredos em Settings > Secrets and variables > Actions:
+## Pendências que impedem declarar o navegador totalmente de-googled
 
-   | Segredo | Conteudo |
-   | --- | --- |
-   | PURO_KEYSTORE_V1 | saida de base64 -w0 puro-v1.jks |
-   | PURO_KEYSTORE_V1_PASSWORD | senha da keystore v1 |
-   | PURO_KEYSTORE_V2 ate PURO_KEYSTORE_V4 | idem, por variante |
+Os patches atuais ainda não removem integralmente:
+- código, telas e pontos de entrada de Sync/login;
+- UMA/UKM, provedores de métricas e todo Variations/Finch;
+- Crashpad do APK (o template upstream ainda empacota o handler);
+- todas as referências de Translate e geolocalização;
+- SDKs Google, endpoints, strings e chamadas em bibliotecas nativas;
+- página inicial e mecanismo de busca padrão neutros.
 
-3. (Opcional) Vendorizar patches de codigo-fonte em puro/patches/*.patch, conforme as notas em puro/patches/README.md.
+A auditoria atual verifica package ID, assinatura, alinhamento, ABI e uma lista explícita de referências no manifesto. Ela não comprova ausência de tráfego Google nem remoção total de telemetria. Não publicar como “totalmente de-googled” até concluir auditoria estática/dinâmica e testes.
 
-## Como disparar
+## Assinatura
 
-Apos mesclar este branch no branch padrao, use a aba Actions > Puro Browser - Compilacao e Assinatura de APK > Run workflow. Sem mesclar, e possivel disparar diretamente sobre este branch:
+Cada variante usa uma keystore independente. O workflow ativa os esquemas Android V1, V2, V3 e V4; V4 gera arquivo `.idsig`. O número da variante (v1–v4) identifica o pacote; os esquemas de assinatura Android são uma coisa distinta.
 
+Gere as keystores numa máquina confiável:
 ```bash
-gh workflow run puro-browser.yml --ref puro-browser -f variant=v1 -f target_cpu=arm64
-gh workflow run puro-browser.yml --ref puro-browser -f variant=v4 -f build_all_abis=true -f publish_release=true
+bash puro/gen_keystores.sh /caminho/seguro/keys
 ```
+Cadastre oito secrets em Settings → Secrets and variables → Actions:
+- `PURO_KEYSTORE_V1` … `PURO_KEYSTORE_V4`: Base64 de cada JKS.
+- `PURO_KEYSTORE_V1_PASSWORD` … `PURO_KEYSTORE_V4_PASSWORD`: senha correspondente.
 
-## Parametros do workflow
+Nunca envie keystores ou senhas ao repositório. Faça backup seguro; perder uma chave impede atualizações in-place daquela variante.
 
-| Parametro | Valores | Efeito |
-| --- | --- | --- |
-| variant | v1, v2, v3, v4 | Define application ID (com.purobrowser.vN), canal e keystore |
-| target_cpu | arm64, arm, x86, x64 | ABI do APK gerado |
-| build_all_abis | booleano | Compila as quatro ABIs em matriz paralela |
-| chromium_ref | SHA de commit | Fixa a base do espelho (vazio = HEAD do branch principal) |
-| runner_label | label do runner | Padrao: puro-builder |
-| publish_release | booleano | Publica os APKs como Release do repositorio |
+## Runner e execução
 
-## Sobre as assinaturas
+Runner self-hosted Linux x64: mínimo 8 CPUs, 16 GB RAM e 200 GB livres; recomendado 32+ CPUs, 64 GB RAM e 400 GB NVMe. O runner hospedado padrão do GitHub não possui espaço suficiente.
 
-As variantes V1 a V4 correspondem a pacotes distintos (com.purobrowser.v1 a v4), cada qual com keystore propria, o que permite a instalacao paralela no mesmo aparelho. Independente da variante, todo APK e assinado com os esquemas V1 (JAR), V2 e V3, verificados pelo passo apksigner verify. O esquema V4 de assinatura destina-se apenas a instalacoes incrementais via adb e nao substitui os anteriores; por isso permanece desativado.
+1. Cadastre runner com labels `self-hosted`, `linux`, `x64` e `puro-builder`.
+2. Configure os oito secrets.
+3. Actions → Puro Browser - Android builds → Run workflow.
+4. Selecione variante e ABI, ou `build_all_abis=true`.
 
-## Limitacoes conhecidas
+O workflow aplica patches estritamente e falha se a revisão não corresponder. Informe SHA/branch compatível em `chromium_ref`.
 
-1. Runners padrao do GitHub nao compilam o Chromium; o workflow aborta com erro explicito se houver menos de 200 GB livres.
-2. O espelho nao possui tags; informe um SHA de commit ou deixe chromium_ref vazio para usar o HEAD do branch principal.
-3. O cache de acoes do GitHub e limitado a 10 GB por repositorio; a arvore (mais de 100 GB) nao pode ser cacheada, de modo que cada execucao realiza a sincronizacao completa.
-4. As flags GN implementam a remocao em tempo de compilacao (chaves de API, Safe Browsing, field trials, Contextual Search, reporte e servicos remotos). Remocoes de codigo-fonte adicionais (Sync, UMA, upload de minidumps, Translate) exigem patches em puro/patches, aplicados automaticamente quando presentes.
-5. A primeira compilacao de cada ABI demanda tipicamente de 4 a 12 horas, conforme o hardware; execucoes subsequentes na mesma maquina podem reutilizar o diretorio out se preservado.

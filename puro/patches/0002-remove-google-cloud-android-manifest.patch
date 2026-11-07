@@ -1,0 +1,58 @@
+diff --git a/chrome/android/java/AndroidManifest.xml b/chrome/android/java/AndroidManifest.xml
+--- a/chrome/android/java/AndroidManifest.xml
++++ b/chrome/android/java/AndroidManifest.xml
+@@ -159,16 +159,10 @@
+     <permission android:name="{{ manifest_package }}.permission.CHILD_SERVICE" android:protectionLevel="signature" />
+     <permission android:name="{{ manifest_package }}.permission.READ_WRITE_BOOKMARK_FOLDERS" android:protectionLevel="signatureOrSystem" />
+     <permission android:name="{{ manifest_package }}.TOS_ACKED" android:protectionLevel="signatureOrSystem" />
+-    <!-- Only chrome can receive the messages and registration result -->
+-    <permission android:name="{{ manifest_package }}.permission.C2D_MESSAGE"
+-        android:protectionLevel="signature" />
+     <permission android:name="{{ manifest_package }}.permission.DEBUG"
+                 android:label="Debug web pages"
+                 android:protectionLevel="signature" />
+ 
+-    <uses-permission android:name="{{ manifest_package }}.permission.C2D_MESSAGE" />
+     <uses-permission android:name="{{ manifest_package }}.permission.READ_WRITE_BOOKMARK_FOLDERS" />
+     <uses-permission android:name="{{ manifest_package }}.TOS_ACKED" />
+ 
+     <uses-permission android:name="com.chrome.permission.DEVICE_EXTRAS" />
+-    <uses-permission android:name="com.google.android.c2dm.permission.RECEIVE" />
+     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT"/>
+ 
+-    <uses-permission android:name="com.google.android.apps.now.CURRENT_ACCOUNT_ACCESS" />
+-
+@@ -570,14 +564,6 @@
+-        <!-- Phishing Protection related -->
+-        <receiver android:name="org.chromium.chrome.browser.safe_browsing.PasswordProtectionBroadcastReceiver"
+-        android:exported="true"
+-        android:permission="com.google.android.gms.permission.INTERNAL_BROADCAST">
+-            <intent-filter>
+-                <action android:name="com.android.chrome.safe_browsing.LOGIN" />
+-            </intent-filter>
+-        </receiver>
+-
+         <!-- Upgrade related -->
+@@ -1087,17 +1073,6 @@
+-        <!-- GcmListenerService for messages from GCM. -->
+-        <service android:name="org.chromium.chrome.browser.services.gcm.ChromeGcmListenerService"
+-            android:exported="false" >
+-            <intent-filter>
+-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+-            </intent-filter>
+-        </service>
+-        <service android:name="org.chromium.chrome.browser.services.gcm.GCMBackgroundService"
+-            android:exported="false"/>
+-        <service android:name="org.chromium.chrome.browser.services.gcm.InvalidationGcmUpstreamSender"
+-            android:exported="false"/>
+-
+         <!-- Android Notification service listener -->
+@@ -1439,11 +1414,6 @@
+-      <!-- Cast support -->
+-      <meta-data
+-          android:name=
+-          "com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+-          android:value="org.chromium.components.media_router.caf.CastOptionsProvider"/>
+-
+       <!-- These providers are declared in the base module to give the chrome
+            split preloader more time to work. -->
