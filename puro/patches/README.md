@@ -1,14 +1,8 @@
-# Puro: patches de codigo-fonte
+# Patches do Puro Browser
 
-Este diretorio recebe patches (.patch) aplicados automaticamente pela Action antes da compilacao, em ordem alfabetica. As flags GN ja removem, em tempo de compilacao, as chaves de API do Google, o Safe Browsing em nuvem, os field trials de teste, o Contextual Search, o reporte (Reporting API), o mDNS e os servicos remotos de reuniao.
+Os patches sao aplicados antes de `gn gen`, em ordem alfabetica, e agora sao obrigatorios: qualquer divergencia com a revisao fixada encerra a compilacao.
 
-Para remocoes que exigem edicao de codigo-fonte (interface e nucleo de Sync e login, metricas UMA, upload de minidumps do Crashpad, integracao de Translate), recomenda-se partir dos patch sets publicos e comprovados do Cromite e do ungoogled-chromium, adaptando-os a base deste repositorio:
+- `0001-puro-package-id.patch`: adiciona `puro_variant` ao template GN Android e define os IDs `com.purobrowser.v1..v4`.
+- `0002-remove-google-cloud-android-manifest.patch`: remove permissoes C2DM/conta Google, receiver de broadcast GMS, servicos GCM/FCM e provider Cast do manifesto.
 
-- Cromite (sucessor do Bromite): patches Android e conjunto de flags vigente.
-- ungoogled-chromium-android: pacote renomeado, Safe Browsing compilado fora e permissoes de conta removidas.
-
-Regras de manutencao:
-
-1. Um patch por tema de remocao, nomeado numericamente (001-disable-sync.patch, 002-disable-uma.patch).
-2. Todo patch deve aplicar com git apply sobre a base indicada em chromium_ref.
-3. A cada rampa de versao do Chromium, rebasear a serie e validar com gn gen e compilacao completa.
+Esses patches nao removem classes Java/C++, bibliotecas nativas ou endpoints do grafo de build. Consulte `puro/README.md` para os itens que ainda exigem trabalho.
