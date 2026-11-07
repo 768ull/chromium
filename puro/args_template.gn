@@ -1,0 +1,47 @@
+# args_template.gn: modelo para compilacao manual local (fora do CI).
+# Preencher __VARIANT__ (v1|v2|v3|v4), __CHANNEL__ (stable|beta|dev|canary) e __CPU__ (arm64|arm|x86|x64).
+# Colocar este conteudo em <arvore>/out/puro-<variante>-<cpu>/args.gn e executar:
+#   gn gen out/puro-<variante>-<cpu> && autoninja -C out/puro-<variante>-<cpu> chrome_public_apk
+
+target_os = "android"
+target_cpu = "__CPU__"
+is_debug = false
+is_official_build = true
+is_component_build = false
+android_channel = "__CHANNEL__"
+
+symbol_level = 0
+blink_symbol_level = 0
+v8_symbol_level = 0
+chrome_pgo_phase = 0
+dcheck_always_on = false
+debuggable_apks = false
+exclude_unwind_tables = true
+treat_warnings_as_errors = false
+icu_use_data_file = true
+
+use_official_google_api_keys = false
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+safe_browsing_mode = 0
+disable_fieldtrial_testing_config = true
+enable_reporting = false
+enable_remoting = false
+enable_mdns = false
+enable_service_discovery = false
+build_contextual_search = false
+enable_hangout_services_extension = false
+
+chrome_public_manifest_package = "com.purobrowser.__VARIANT__"
+
+ffmpeg_branding = "Chrome"
+proprietary_codecs = true
+enable_av1_decoder = true
+enable_dav1d_decoder = true
+media_use_openh264 = false
+
+# Assinatura em tempo de compilacao (opcional; a Action assina apos a compilacao com apksigner):
+# android_keystore_name = "puro-__VARIANT__"
+# android_keystore_path = "/caminho/absoluto/puro-__VARIANT__.jks"
+# android_keystore_password = "<senha>"
