@@ -1,0 +1,22 @@
+diff --git a/chrome/android/chrome_public_apk_tmpl.gni b/chrome/android/chrome_public_apk_tmpl.gni
+--- a/chrome/android/chrome_public_apk_tmpl.gni
++++ b/chrome/android/chrome_public_apk_tmpl.gni
+@@ -20,13 +20,19 @@ import("channel.gni")
+ 
+ declare_args() {
++  # Non-empty only for independently installable Puro flavors.
++  puro_variant = ""
++
+   # Android package name to use when compiling the public chrome targets
+   # (chrome_public_apk, chrome_public_bundle, etc.). This defaults to the
+   # Chromium browser package name.
+   chrome_public_manifest_package = "org.chromium.chrome"
+-  if (use_stable_package_name) {
++  if (puro_variant != "") {
++    assert(puro_variant == "v1" || puro_variant == "v2" ||
++           puro_variant == "v3" || puro_variant == "v4")
++    chrome_public_manifest_package = "com.purobrowser." + puro_variant
++  } else if (use_stable_package_name) {
+     chrome_public_manifest_package += ".stable"
+   } else if (android_channel != "default") {
+     chrome_public_manifest_package += "." + android_channel
