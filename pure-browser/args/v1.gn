@@ -1,0 +1,38 @@
+# Pure Browser - variante V1 (Estavel) - modelo de args.gn
+# O script build_pure.sh gera este conteudo automaticamente por variante e
+# ABI; este arquivo serve de referencia e de base para compilacoes manuais.
+target_os = "android"
+target_cpu = "arm64"          # arm64 | arm | x86 | x64
+is_debug = false
+is_official_build = true
+is_component_build = false
+symbol_level = 0
+blink_symbol_level = 0
+disable_fieldtrial_testing_config = true
+
+# Des-Googlizacao em nivel de compilacao
+use_official_google_api_keys = false
+safe_browsing_mode = 0
+enable_reporting = false
+enable_hangout_services_extension = false
+enable_mdns = false
+enable_remoting = false
+build_contextual_search = false
+
+# Flags legadas: verifique com 'gn args out/<dir> --list' e remova a linha
+# caso o gn as rejeite como argumentos desconhecidos.
+enable_gservices = false
+enable_google_now = false
+
+# Identidade da variante V1 (Estavel)
+chrome_public_manifest_package = "com.purobrowser.v1"
+android_channel = "default"
+
+# Codecs de uso generalizado na web (H.264/AAC)
+proprietary_codecs = true
+ffmpeg_branding = "Chrome"
+
+# Assinatura (preencha o caminho real do keystore)
+android_keystore_name = "pure_v1"
+android_keystore_path = "/caminho/seguro/keystores/pure_v1.jks"
+android_keystore_password = "<SENHA>"

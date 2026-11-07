@@ -1,0 +1,88 @@
+# Compilacao do Pure Browser para Android.
+# AVISO: os runners hospedados gratuitos do GitHub (4 nucleos, disco e tempo
+# insuficientes) NAO conseguem compilar o Chromium. Este job requer um runner
+# auto-hospedado com o rotulo "chromium-builder". O registro do runner esta
+# descrito em pure-browser/README.md (Passo 1).
+name: Build Pure Browser APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: 'Variante'
+        required: true
+        default: 'v1'
+        type: choice
+        options: ['v1', 'v2', 'v3', 'v4']
+      abi:
+        description: 'ABI alvo'
+        required: true
+        default: 'arm64'
+        type: choice
+        options: ['arm64', 'arm', 'x86', 'x64']
+  push:
+    branches: ['main']
+    paths: ['pure-browser/**', '.github/workflows/build-pure.yml']
+
+concurrency:
+  group: pure-browser-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ['self-hosted', 'chromium-builder']
+    timeout-minutes: 360
+    steps:
+      - name: Preparar depot_tools e checkout do Chromium
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/depot_tools:$PATH"
+          mkdir -p "$HOME/depot_tools" "$HOME/pure-browser"
+          if [ ! -d "$HOME/depot_tools/.git" ]; then
+            git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git "$HOME/depot_tools"
+          fi
+          if [ ! -f "$HOME/pure-browser/.gclient" ]; then
+            cd "$HOME/pure-browser"
+            gclient config --name=src https://github.com/768ull/chromium.git
+            echo 'target_os = [ "android" ]' >> .gclient
+          fi
+          cd "$HOME/pure-browser"
+          gclient sync --with_branch_heads --with_tags -D
+
+      - name: Instalar dependencias do sistema (uma unica vez)
+        run: |
+          set -euo pipefail
+          if [ ! -f "$HOME/.pure-deps-ok" ]; then
+            sudo "$HOME/pure-browser/src/build/install-build-deps.sh" --android
+            touch "$HOME/.pure-deps-ok"
+          fi
+
+      - name: Executar hooks (NDK, SDK, toolchains, perfis PGO)
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/depot_tools:$PATH"
+          cd "$HOME/pure-browser"
+          gclient runhooks
+
+      - name: Compilar Pure Browser
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/depot_tools:$PATH"
+          V="${{ inputs.variant || 'v1' }}"
+          A="${{ inputs.abi || 'arm64' }}"
+          cd "$HOME/pure-browser/src"
+          chmod +x pure-browser/build_pure.sh
+          KEYSTORE_PASSWORD="${{ secrets.PURE_KEYSTORE_PASSWORD }}" \
+            ./pure-browser/build_pure.sh "$V" "$A"
+
+      - name: Publicar APK como artefato
+        run: |
+          set -euo pipefail
+          cp "$HOME/pure-browser/src/dist/"*.apk "$GITHUB_WORKSPACE/"
+
+      - name: Upload do artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: PureBrowser-${{ inputs.variant || 'v1' }}-${{ inputs.abi || 'arm64' }}
+          path: '*.apk'
+          if-no-files-found: error
