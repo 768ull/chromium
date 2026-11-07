@@ -35,11 +35,8 @@ google_api_key = ""
 google_default_client_id = ""
 google_default_client_secret = ""
 enable_hangout_services_extension = false
-enable_remoting = false
 enable_mdns = false
 enable_service_discovery = false
-enable_media_router = false
-enable_reporting = false
 disable_fieldtrial_testing_config = true
 safe_browsing_mode = 1
 EOF
